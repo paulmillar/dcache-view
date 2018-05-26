@@ -123,6 +123,10 @@
                 this._sendItemIndex_ = this._sendItemIndex.bind(this);
                 this._reset_ = this._reset.bind(this);
                 this._renameInputStart_ = this._renameInputStart.bind(this);
+                this._sseEndpointUpdate_ = this._sseEndpointUpdate.bind(this);
+                this._sseEnableLive_ = this._sseEnableLive.bind(this);
+                this._sseDisableLive_ = this._sseDisableLive.bind(this);
+                this._inotifySseEvent_ = this._inotifySseEvent.bind(this);
             }
             ready()
             {
@@ -144,7 +148,19 @@
                 window.addEventListener('dv-namespace-request-item-index', this._sendItemIndex_);
                 window.addEventListener('dv-namespace-reset-element-internal-parameters', this._reset_);
                 window.addEventListener('dv-namespace-namespace-open-rename-dialogbox', this._renameInputStart_);
+                window.addEventListener('dv-sse-endpoint-updated', this._sseEndpointUpdate_);
+                window.addEventListener('dv-sse-enable-live', this._sseEnableLive_);
+                window.addEventListener('dv-sse-disable-live', this._sseDisableLive_);
+
+                if (window.sseSource) {
+                    window.sseSource.addEventListener("inotify", this._inotifySseEvent_);
+                }
+                if (window.sseSubscription && window.sseSubscription.path != this.path) {
+                    this._unsubscribe();
+                    this._subscribe();
+                }
             }
+
             disconnectedCallback()
             {
                 super.disconnectedCallback();
@@ -159,7 +175,15 @@
                 window.removeEventListener('dv-namespace-request-item-index', this._sendItemIndex_);
                 window.removeEventListener('dv-namespace-reset-element-internal-parameters', this._reset_);
                 window.removeEventListener('dv-namespace-namespace-open-rename-dialogbox', this._renameInputStart_);
+                window.removeEventListener('dv-sse-endpoint-updated', this._sseEndpointUpdate_);
+                window.removeEventListener('dv-sse-enable-live', this._sseEnableLive_);
+                window.removeEventListener('dv-sse-disable-live', this._sseDisableLive_);
+
+                if (window.sseSource) {
+                    window.sseSource.removeEventListener("inotify", this._inotifySseEvent_);
+                }
             }
+
             static get is()
             {
                 return "view-file";
@@ -250,6 +274,211 @@
                     '__xSelectedItemsChanged(_xSelectedItems.splices)',
                     '_setSequentRequestStatus(__counter__)'
                 ];
+            }
+
+            _sseEndpointUpdate()
+            {
+                if (window.sseEndpoint) {
+                    if (!window.sseSource) {
+                        console.log("Creating SSE Source");
+                        window.sseSource = this._buildSource(window.sseEndpoint);
+                    }
+                } else if (window.sseSource) {
+                    console.log("Closing SSE Source");
+                    window.sseSource.close();
+                    window.sseSource = undefined;
+                }
+            }
+
+            _sseEnableLive()
+            {
+                if (!window.sseSubscription || window.sseSubscription.path != this.path) {
+                    this._unsubscribe();
+                    this._subscribe("Live Mode engaged");
+                }
+            }
+
+            _subscribe(message)
+            {
+                let selector={path: this.path};
+                let type="inotify";
+
+                let request = new XMLHttpRequest();
+                request.responseType = 'json';
+                request.onreadystatechange = function() {
+                    if (this.readyState == 4) {
+                        if (this.status == 201) {
+                            window.sseSubscription = {
+                                path: this.path,
+                                url: request.getResponseHeader('Location')
+                            };
+                            if (message) {
+                                app.$.toast.text = message;
+                                app.$.toast.show();
+                            }
+                        } else if (this.status == 200) {
+                            // We don't update our subscriptions, so don't expect to see this.
+                            let url = request.responseUrl;
+                            console.log("Updating existing subscription: " + url);
+                        } else {
+                            app.$.toast.text = type + " subscription failed: " + this.status + " " + this.statusText;
+                            app.$.toast.show();
+                        }
+                    }
+                };
+
+                let auth = app.getAuthValue();
+                request.open("POST", window.sseEndpoint + "/subscriptions/" + type, true);
+                request.setRequestHeader("Authorization", `${auth}`);
+                request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                request.send(JSON.stringify(selector));
+            }
+
+            _unsubscribe(message)
+            {
+                if (window.sseSubscription) {
+                    let url = window.sseSubscription.url;
+                    let request = new XMLHttpRequest();
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4) {
+                            if (this.status == 204) {
+                                window.sseSubscription = undefined;
+                                if (message) {
+                                    app.$.toast.text = message;
+                                    app.$.toast.show();
+                                }
+                            } else {
+                                app.$.toast.text = "Subscription deletion failed: " + this.statusText;
+                                app.$.toast.show();
+                            }
+                        }
+                    };
+                    let auth = app.getAuthValue();
+                    request.open("DELETE", url, true);
+                    request.setRequestHeader("Authorization", `${auth}`);
+                    request.send();
+                }
+            }
+
+            _sseDisableLive()
+            {
+                this._unsubscribe("Live Mode disengaged");
+            }
+
+            _buildSource(url)
+            {
+                let headers = new Headers();
+                let auth = app.getAuthValue();
+                headers.append('Authorization', auth);
+                let source = new EventSource(url, {headers: headers});
+                source.onerror = function() {
+                    app.$.toast.text = "Error with SSE connected";
+                    app.$.toast.show();
+                }
+                // REVISIT: should we react on successful source connection?
+                //source.onopen = function() { }
+
+                source.addEventListener("SYSTEM", function(e) {
+                    let data = JSON.parse(e.data);
+                    let type = data.type;
+                    if (type == "SHUTDOWN") {
+                        app.$.toast.text = "dCache frontend shutting down";
+                        app.$.toast.show();
+                        // REVIST ... what should we do here?
+                    }
+                });
+
+                source.addEventListener("inotify", this._inotifySseEvent_);
+                return source;
+            }
+
+            _inotifySseEvent(e)
+            {
+                let event = JSON.parse(e.data).event;
+                let mask = event.mask;
+                if (mask.indexOf("IN_CREATE") != -1) {
+                    this._inotifyCreate(event);
+                } else if (mask.indexOf("IN_DELETE") != -1) {
+                    this._inotifyDelete(event);
+                } else if (mask.indexOf("IN_ATTRIB") != -1) {
+                    this._inotifyAttrib(event);
+                } else if (mask.indexOf("IN_MOVED_FROM") != -1) {
+                    this._inotifyMovedFrom(event);
+                } else if (mask.indexOf("IN_MOVED_TO") != -1) {
+                    this._inotifyMovedTo(event);
+                } else if (mask.indexOf("IN_IGNORED") != -1) {
+                    // no more events
+                } else if (mask.indexOf("IN_ISDIR") != -1 && (mask.indexOf("IN_OPEN") != -1 || mask.indexOf("IN_ACCESS") != -1 || mask.indexOf("IN_CLOSE_NOWRITE") != -1)) {
+                    // ignore directory listing
+                } else {
+                    console.log("Received unknown inotify event: " + e.data);
+                }
+            }
+
+            _inotifyCreate(event)
+            {
+                this._addItem(event.name, event.mask.indexOf("IN_ISDIR") != -1)
+            }
+
+            _inotifyAttrib(event)
+            {
+                this._stat(event.name);
+            }
+
+            _inotifyMovedFrom(event)
+            {
+                // FIXME should save this file's information, in case we see a corresponding IN_MOVED_TO event
+                this._removeFiles([event.name]);
+            }
+
+            _inotifyMovedTo(event)
+            {
+                // FIXME check storage for corresponding IN_MOVED_FROM event
+                // if not found, add place-holder entry and schedule a stat
+                this._addItem(event.name, event.mask.indexOf("IN_ISDIR") != -1)
+                this._stat(event.name);
+            }
+
+            _addItem(name, isDir)
+            {
+                this._addFiles([{
+                            fileName : name,
+                            fileMimeType : isDir ? "application/vnd.dcache.folder" : "application/octet-stream",
+                            fileType : isDir ? "DIR" : "REGULAR"
+                        }]);
+            }
+
+            _inotifyDelete(event)
+            {
+                this._removeFiles([event.name]);
+            }
+
+            _stat(name)
+            {
+                let request = new XMLHttpRequest();
+                request.responseType = 'json';
+                let self = this;
+                request.onreadystatechange = function() {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            let stat = request.response;
+                            stat.fileName = name; // REVISIT in API
+                            self._updateFiles([stat]);
+                        } else if (this.status == 404) {
+                            console.log(`Stat indicates file ${name} was deleted`);
+                            self._removeFiles([name]);
+                        } else {
+                            app.$.toast.text = type + " stat failed: " + this.status + " " + this.statusText;
+                            app.$.toast.show();
+                        }
+                    }
+                };
+
+                let url=window.CONFIG["dcache-view.endpoints.webapi"] + "namespace" + this.path + "/" + name + "?qos=true";
+                request.open("GET", url, true);
+                request.setRequestHeader("Authorization", app.getAuthValue());
+                request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                request.send();
             }
 
             _computedUpw(path)
@@ -601,14 +830,22 @@
 
             _removeItems(event)
             {
-                const files = event.detail.files;
+                let names = [];
+                event.detail.files.forEach( (file) => {
+                    names.push(file.fileName);
+                });
+                this._removeFiles(names);
+            }
+
+            _removeFiles(names)
+            {
                 const len = this.$.feList.items.length;
-                files.forEach( (file) => {
+                names.forEach( (name) => {
                     for (let i=0; i < len; i++) {
-                        if (this.$.feList.items[i].fileName === file.fileName) {
+                        if (this.$.feList.items[i].fileName === name) {
                             this.$.feList.splice('items', i, 1);
                             if (this._xSelectedItems.length > 0) {
-                                const idx = this._xSelectedItems.indexOf(file);
+                                const idx = this._xSelectedItems.indexOf(name);
                                 this.splice('_xSelectedItems', idx, 1);
                             }
                             break;
@@ -620,18 +857,45 @@
 
             _addItems(event)
             {
+                this._addFiles(event.detail.files);
+            }
+
+            _addFiles(files)
+            {
                 const ed = this.shadowRoot.querySelector('empty-directory');
                 if (ed) {
                     this.$.content.removeChild(ed);
                 }
                 if (this.$.feList !== null || this.$.feList !== undefined) {
-                    const files = event.detail.files;
                     files.forEach( (file) => {
                         this.$.feList.unshift('items',file);
                     });
                 }
                 this.$.feList.fire('iron-resize');
                 this._updateContentElevationAttribute();
+            }
+
+            _updateFiles(files)
+            {
+                const len = this.$.feList.items.length;
+
+                files.forEach((file) => {
+                    for (let i=0; i < len; i++) {
+                        if (this.$.feList.items[i].fileName === file.fileName) {
+                            this.$.feList.splice('items', i, 1, file);
+                            break;
+                        }
+                    }
+                });
+                this.$.feList.fire('iron-resize');
+                this._updateContentElevationAttribute();
+            }
+
+            _sendCurrentPath()
+            {
+                this.dispatchEvent(
+                    new CustomEvent('dv-namespace-current-path', {
+                        detail: {currentPath: this.path}, bubbles: true, composed: true}));
             }
 
             /**
