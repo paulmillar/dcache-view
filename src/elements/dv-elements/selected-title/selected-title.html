@@ -125,6 +125,10 @@
                                            on-tap="_metadataInfo"></paper-icon-button>
                         <paper-tooltip>metadata information</paper-tooltip>
                     </div>
+                    <div>
+                        <paper-toggle-button disabled="{{!isLiveViewEnabled}}" checked="{{isLiveViewChecked}}"></paper-toggle-button>
+                        <paper-tooltip>live view</paper-tooltip>
+                    </div>
                 </div>
             </div>
         </template>
@@ -160,6 +164,12 @@
                     (e)=>{this._resetViewFileDependentParameters(e)}
                 );
 
+                window.addEventListener('dv-authentication-successful',
+                    (e)=>{this._login()});
+
+                window.addEventListener('dv-authentication-logout',
+                    (e)=>{this._logout()});
+
                 this.dispatchEvent(
                     new CustomEvent('dv-namespace-request-current-path', {bubbles: true, composed: true}));
             }
@@ -174,6 +184,36 @@
                 window.removeEventListener('dv-namespace-view-file-created',
                     (e)=>{this._resetViewFileDependentParameters(e)}
                 );
+                window.removeEventListener('dv-authentication-successful',
+                    (e)=>{this._login()});
+                window.removeEventListener('dv-authentication-logout',
+                    (e)=>{this._logout()});
+            }
+
+	    _login()
+            {
+                this.tryCreateChannel();
+            }
+
+            _logout()
+            {
+                if (window.sseEndpoint) {
+                    window.sseEndpoint = undefined;
+                    window.dispatchEvent(
+                        new CustomEvent('dv-sse-endpoint-updated', {bubbles: true, composed: true}));
+                }
+                this._disableLiveView();
+            }
+
+            _enableLiveView()
+            {
+                this.isLiveViewEnabled = true;
+            }
+
+            _disableLiveView()
+            {
+                this.isLiveViewChecked = false;
+                this.isLiveViewEnabled = false;
             }
 
             static get properties()
@@ -213,6 +253,18 @@
 
                     currentPath: {
                         type: String,
+                    },
+
+	            isLiveViewChecked: {
+                        type: Boolean,
+                        value: false,
+                        notify: true,
+                        observer: '_liveViewChecked'
+                    },
+	            isLiveViewEnabled: {
+                        type: Boolean,
+                        value: false,
+                        notify: true
                     }
                 }
             }
@@ -251,6 +303,44 @@
                 } else {
                     app.$.dvDrawerPanel.forceNarrow = false;
                     app.$.dvMainTopBar.style.display = '';
+                }
+            }
+
+            tryCreateChannel()
+            {
+                if (window.sseEndpoint === undefined) {
+                    let request = new XMLHttpRequest();
+                    request.responseType = 'json';
+                    let self = this;
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4) {
+                            if (this.status == 201) {
+                                window.sseEndpoint = request.getResponseHeader("Location");
+                                self._enableLiveView();
+                                window.dispatchEvent(
+                                    new CustomEvent('dv-sse-endpoint-updated', {bubbles: true, composed: true}));
+                            } else {
+                                self._disableLiveView();
+                            }
+                        }
+                    };
+                    let url = window.CONFIG["dcache-view.endpoints.webapi"] + "events/channels";
+                    let auth = app.getAuthValue();
+                    request.open("POST", url, true);
+                    request.setRequestHeader("Authorization", `${auth}`);
+                    request.send();
+                }
+            }
+
+            _liveViewChecked(newValue, oldValue)
+            {
+                if (oldValue === undefined) {
+                } else if (newValue) {
+                    window.dispatchEvent(
+                            new CustomEvent('dv-sse-enable-live', {bubbles: true, composed: true}));
+                } else {
+                    window.dispatchEvent(
+                            new CustomEvent('dv-sse-disable-live', {bubbles: true, composed: true}));
                 }
             }
 

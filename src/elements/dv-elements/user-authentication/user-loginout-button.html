@@ -258,6 +258,7 @@
                 Polymer.dom.flush();
                 this.updateStyles();
                 window.location.reload();
+                window.dispatchEvent(new CustomEvent('dv-authentication-logout'));
             }
 
             _diffuser()
