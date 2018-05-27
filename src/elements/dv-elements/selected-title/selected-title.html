@@ -143,6 +143,14 @@
     <script>
         class SelectedTitle extends Polymer.Element
         {
+            constructor()
+            {
+                super();
+                this._setCurrentPath_ = this._setCurrentPath.bind(this);
+                this._resetViewFileDependentParameters_ = this._resetViewFileDependentParameters.bind(this);
+                this._isSelectedChanged_ = this._isSelectedChanged.bind(this);
+            }
+
             static get is()
             {
                 return 'selected-title';
@@ -152,28 +160,20 @@
             {
                 super.connectedCallback();
                 window.addEventListener('dv-namespace-x-selected-items-changed',
-                    (e)=>{this._isSelectedChanged(e)}
-                );
-                window.addEventListener('dv-namespace-current-path',(e)=>{this._setCurrentPath(e)});
-
+                        this._isSelectedChanged_);
+                window.addEventListener('dv-namespace-current-path', this._setCurrentPath_);
                 window.addEventListener('dv-namespace-view-file-created',
-                    (e)=>{this._resetViewFileDependentParameters(e)}
-                );
-
-                this.dispatchEvent(
-                    new CustomEvent('dv-namespace-request-current-path', {bubbles: true, composed: true}));
+                        this._resetViewFileDependentParameters_);
             }
 
             disconnectedCallback()
             {
                 super.disconnectedCallback();
                 window.removeEventListener('dv-namespace-x-selected-items-changed',
-                    (e)=>{this._isSelectedChanged(e)}
-                );
-                window.removeEventListener('dv-namespace-current-path',(e)=>{this._setCurrentPath(e)});
+                        this._isSelectedChanged_);
+                window.removeEventListener('dv-namespace-current-path', this._setCurrentPath_);
                 window.removeEventListener('dv-namespace-view-file-created',
-                    (e)=>{this._resetViewFileDependentParameters(e)}
-                );
+                        this._resetViewFileDependentParameters_);
             }
 
             static get properties()
@@ -213,6 +213,8 @@
 
                     currentPath: {
                         type: String,
+                        notify: true,
+                        observer: 'currentPathChanged'
                     }
                 }
             }
@@ -222,6 +224,11 @@
                 return [
                     'changedSection(pgRoute)'
                 ];
+            }
+
+            currentPathChanged()
+            {
+                console.log("[selected-title] currentPath now " + this.currentPath);
             }
 
             changedSection(pgRoute)
@@ -386,6 +393,7 @@
 
             _setCurrentPath(e)
             {
+                console.log("selected-title: handling dv-namespace-current-path event");
                 this.currentPath = e.detail.currentPath;
             }
 

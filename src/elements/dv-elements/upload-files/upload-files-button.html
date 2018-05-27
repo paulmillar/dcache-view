@@ -35,7 +35,7 @@
                 super();
                 this._handleFileSelection = this.handleFileSelection.bind(this);
                 this._openFilePicker_ = this._openFilePicker.bind(this);
-                this._setCurrentPath_ = this._setCurrentPath.bind(this);
+                this._handleCurrentPath_ = this._handleCurrentPath.bind(this);
             }
             static get is()
             {
@@ -45,7 +45,9 @@
             {
                 return {
                     currentPath: {
-                        type: String
+                        type: String,
+                        notify: true,
+                        observer: '_pathChanged'
                     }
                 };
             }
@@ -53,17 +55,15 @@
             {
                 super.connectedCallback();
                 window.addEventListener('dv-namespace-upload-files', this._openFilePicker_);
-                window.addEventListener('dv-namespace-current-path', this._setCurrentPath_);
+                window.addEventListener('dv-namespace-current-path', this._handleCurrentPath_);
 
                 this.$.files.addEventListener('change', this._handleFileSelection);
-                this.dispatchEvent(
-                    new CustomEvent('dv-namespace-request-current-path', {bubbles: true, composed: true}));
             }
             disconnectedCallback()
             {
                 super.disconnectedCallback();
                 window.removeEventListener('dv-namespace-upload-files', this._openFilePicker_);
-                window.removeEventListener('dv-namespace-current-path', this._setCurrentPath_);
+                window.removeEventListener('dv-namespace-current-path', this._handleCurrentPath_);
 
                 this.$.files.removeEventListener('change', this._handleFileSelection);
             }
@@ -157,9 +157,16 @@
             {
                 this.$.files.click();
             }
-            _setCurrentPath(e)
+
+            _handleCurrentPath(e)
             {
+                console.log("[upload-files-button] received new path notification");
                 this.currentPath = e.detail.currentPath;
+            }
+
+            _pathChanged(newValue, oldValue)
+            {
+                console.log("Path changed from "+ oldValue + " to " + newValue);
             }
         }
         window.customElements.define(UploadFilesButton.is, UploadFilesButton);

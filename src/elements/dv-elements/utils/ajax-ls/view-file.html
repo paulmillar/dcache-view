@@ -120,7 +120,6 @@
 
                 this._removeItems_ = this._removeItems.bind(this);
                 this._addItems_ = this._addItems.bind(this);
-                this._sendCurrentPath_ = this._sendCurrentPath.bind(this);
                 this._sendItemIndex_ = this._sendItemIndex.bind(this);
                 this._reset_ = this._reset.bind(this);
                 this._renameInputStart_ = this._renameInputStart.bind(this);
@@ -142,7 +141,6 @@
 
                 window.addEventListener('dv-namespace-remove-items', this._removeItems_);
                 window.addEventListener('dv-namespace-add-items', this._addItems_);
-                window.addEventListener('dv-namespace-request-current-path', this._sendCurrentPath_);
                 window.addEventListener('dv-namespace-request-item-index', this._sendItemIndex_);
                 window.addEventListener('dv-namespace-reset-element-internal-parameters', this._reset_);
                 window.addEventListener('dv-namespace-namespace-open-rename-dialogbox', this._renameInputStart_);
@@ -158,7 +156,6 @@
 
                 window.removeEventListener('dv-namespace-remove-items', this._removeItems_);
                 window.removeEventListener('dv-namespace-add-items', this._addItems_);
-                window.removeEventListener('dv-namespace-request-current-path', this._sendCurrentPath_);
                 window.removeEventListener('dv-namespace-request-item-index', this._sendItemIndex_);
                 window.removeEventListener('dv-namespace-reset-element-internal-parameters', this._reset_);
                 window.removeEventListener('dv-namespace-namespace-open-rename-dialogbox', this._renameInputStart_);
@@ -635,13 +632,6 @@
                 }
                 this.$.feList.fire('iron-resize');
                 this._updateContentElevationAttribute();
-            }
-
-            _sendCurrentPath()
-            {
-                this.dispatchEvent(
-                    new CustomEvent('dv-namespace-current-path', {
-                        detail: {currentPath: this.path}, bubbles: true, composed: true}));
             }
 
             /**

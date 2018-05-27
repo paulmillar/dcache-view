@@ -135,6 +135,7 @@
                 this.multipleSelection = n === 1;
                 this.currentDir = n === 2;
                 this.targetNode = t;
+                this._setCurrentPath_ = this._setCurrentPath.bind(this);
             }
 
             static get is()
@@ -162,6 +163,8 @@
                     },
                     currentPath: {
                         type: String,
+                        notify: true,
+                        observer: 'currentPathChanged'
                     }
                 }
             }
@@ -169,6 +172,11 @@
             ready()
             {
                 super.ready();
+            }
+
+            currentPathChanged(newValue, oldValue)
+            {
+                console.log("namespace-context-content] path changed from " + oldValue + " to " + newValue);
             }
 
             connectedCallback()
@@ -204,9 +212,7 @@
                     nd.addEventListener('mouseenter', (e)=>{this._mouseEnter(e)});
                 });
 
-                window.addEventListener('dv-namespace-current-path',(e)=>{this._setCurrentPath(e)});
-                this.dispatchEvent(
-                    new CustomEvent('dv-namespace-request-current-path', {bubbles: true, composed: true}));
+                window.addEventListener('dv-namespace-current-path', this._setCurrentPath_);
             }
 
             disconnectedCallback()
@@ -242,7 +248,7 @@
                     nd.removeEventListener('mouseenter', (e)=>{this._mouseEnter(e)});
                 });
 
-                window.removeEventListener('dv-namespace-current-path',(e)=>{this._setCurrentPath(e)});
+                window.removeEventListener('dv-namespace-current-path', this._setCurrentPath_);
             }
 
             _mouseEnter(e)
@@ -511,6 +517,7 @@
 
             _setCurrentPath(e)
             {
+                console.log("namespace-contextual-context] updating path to " + e.detail.currentPath);
                 this.currentPath = e.detail.currentPath;
             }
         }
