@@ -249,8 +249,7 @@
 
                     currentPath: {
                         type: String,
-                        notify: true,
-                        observer: 'currentPathChanged'
+                        notify: true
                     },
 
 	            isLiveViewChecked: {
@@ -272,11 +271,6 @@
                 return [
                     'changedSection(pgRoute)'
                 ];
-            }
-
-            currentPathChanged()
-            {
-                console.log("[selected-title] currentPath now " + this.currentPath);
             }
 
             changedSection(pgRoute)
@@ -479,7 +473,6 @@
 
             _setCurrentPath(e)
             {
-                console.log("selected-title: handling dv-namespace-current-path event");
                 this.currentPath = e.detail.currentPath;
             }
 

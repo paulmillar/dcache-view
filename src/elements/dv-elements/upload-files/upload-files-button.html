@@ -46,8 +46,7 @@
                 return {
                     currentPath: {
                         type: String,
-                        notify: true,
-                        observer: '_pathChanged'
+                        notify: true
                     }
                 };
             }
@@ -160,13 +159,7 @@
 
             _handleCurrentPath(e)
             {
-                console.log("[upload-files-button] received new path notification");
                 this.currentPath = e.detail.currentPath;
-            }
-
-            _pathChanged(newValue, oldValue)
-            {
-                console.log("Path changed from "+ oldValue + " to " + newValue);
             }
         }
         window.customElements.define(UploadFilesButton.is, UploadFilesButton);

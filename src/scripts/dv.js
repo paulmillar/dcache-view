@@ -72,7 +72,6 @@
             }
         },100);
 
-        console.log("Dispatching dv-namespace-current-path path=" + path + " from dv.js");
         window.dispatchEvent(
             new CustomEvent('dv-namespace-current-path', {
                 detail: {currentPath: path}, bubbles: true, composed: true}));

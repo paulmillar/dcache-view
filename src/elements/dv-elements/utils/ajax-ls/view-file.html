@@ -112,6 +112,7 @@
             constructor(path)
             {
                 super();
+                console.log("ViewFile:constructor " + path);
                 this.path = path === undefined ? "/" : path;
 
                 window.dispatchEvent(
@@ -131,12 +132,14 @@
             ready()
             {
                 super.ready();
+                console.log("ViewFile:ready " + this.path);
                 this.$.feList.scrollTarget = this.$.content;
                 this.$.threshold.scrollTarget = this.$.content;
             }
             connectedCallback()
             {
                 super.connectedCallback();
+                console.log(`ViewFile:${this.path} connectedCallback`);
                 this.$.feList.addEventListener('click', this._stopPropagation);
 
                 this.addEventListener('keydown', this._multipleSelectionShortcuts);
@@ -153,17 +156,26 @@
                 window.addEventListener('dv-sse-disable-live', this._sseDisableLive_);
 
                 if (window.sseSource) {
+                    console.log(`ViewFile:${this.path} adding listener for inotify events`);
                     window.sseSource.addEventListener("inotify", this._inotifySseEvent_);
-                }
-                if (window.sseSubscription && window.sseSubscription.path != this.path) {
-                    this._unsubscribe();
-                    this._subscribe();
+
+                    if (window.sseSubscription) {
+                        if (window.sseSubscription.path != this.path) {
+                            console.log(`ViewFile:${this.path} changing subscription from ${window.sseSubscription.path}`);
+                            window.subscriptionPromise = window.subscriptionPromise.then(this._unsubscribe()).then(this._subscribe());
+                        } else {
+                            console.log(`ViewFile:${this.path} active subscription has our path`);
+                        }
+                    } else {
+                        console.log(`ViewFile:${this.path} no active sseSubscription`);
+                    }
                 }
             }
 
             disconnectedCallback()
             {
                 super.disconnectedCallback();
+                console.log(`ViewFile:${this.path} disconnectedCallback`);
                 this.$.feList.removeEventListener('click', this._stopPropagation);
 
                 this.removeEventListener('keydown', this._multipleSelectionShortcuts);
@@ -180,6 +192,7 @@
                 window.removeEventListener('dv-sse-disable-live', this._sseDisableLive_);
 
                 if (window.sseSource) {
+                    console.log(`ViewFile:${this.path} removing listener for inotify events`);
                     window.sseSource.removeEventListener("inotify", this._inotifySseEvent_);
                 }
             }
@@ -280,7 +293,6 @@
             {
                 if (window.sseEndpoint) {
                     if (!window.sseSource) {
-                        console.log("Creating SSE Source");
                         window.sseSource = this._buildSource(window.sseEndpoint);
                     }
                 } else if (window.sseSource) {
@@ -292,81 +304,100 @@
 
             _sseEnableLive()
             {
+                if (window.subscriptionPromise === undefined) {
+                    window.subscriptionPromise = Promise.resolve();
+                }
+
                 if (!window.sseSubscription || window.sseSubscription.path != this.path) {
-                    this._unsubscribe();
-                    this._subscribe("Live Mode engaged");
+                    window.subscriptionPromise = window.subscriptionPromise.then(this._unsubscribe()).then(this._subscribe("Live Mode engaged"));
                 }
             }
 
             _subscribe(message)
             {
-                let selector={path: this.path};
-                let type="inotify";
+                return new Promise((resolve, reject) => {
+                    let selector={path: this.path};
+                    let type="inotify";
 
-                let request = new XMLHttpRequest();
-                request.responseType = 'json';
-                request.onreadystatechange = function() {
-                    if (this.readyState == 4) {
-                        if (this.status == 201) {
-                            window.sseSubscription = {
-                                path: this.path,
-                                url: request.getResponseHeader('Location')
-                            };
-                            if (message) {
-                                app.$.toast.text = message;
+                    let request = new XMLHttpRequest();
+                    request.responseType = 'json';
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4) {
+                            if (this.status == 201) {
+                                console.log(`ViewFile:${this.path} successfully subscribed`);
+                                window.sseSubscription = {
+                                    path: this.path,
+                                    url: request.getResponseHeader('Location')
+                                };
+                                console.log(`ViewFile:${this.path} subscription recorded`);
+                                if (message) {
+                                    app.$.toast.text = message;
+                                    app.$.toast.show();
+                                }
+                                resolve();
+                            } else if (this.status == 200) {
+                                // We don't update our subscriptions, so don't expect to see this.
+                                let url = request.responseUrl;
+                                console.log("Updating existing subscription: " + url);
+                                resolve();
+                            } else {
+                                app.$.toast.text = type + " subscription failed: " + this.status + " " + this.statusText;
                                 app.$.toast.show();
+                                reject(this.statusText);
                             }
-                        } else if (this.status == 200) {
-                            // We don't update our subscriptions, so don't expect to see this.
-                            let url = request.responseUrl;
-                            console.log("Updating existing subscription: " + url);
-                        } else {
-                            app.$.toast.text = type + " subscription failed: " + this.status + " " + this.statusText;
-                            app.$.toast.show();
                         }
-                    }
-                };
+                    };
 
-                let auth = app.getAuthValue();
-                request.open("POST", window.sseEndpoint + "/subscriptions/" + type, true);
-                request.setRequestHeader("Authorization", `${auth}`);
-                request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                request.send(JSON.stringify(selector));
+                    let auth = app.getAuthValue();
+                    request.open("POST", window.sseEndpoint + "/subscriptions/" + type, true);
+                    request.setRequestHeader("Authorization", `${auth}`);
+                    request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                    request.send(JSON.stringify(selector));
+                });
             }
 
             _unsubscribe(message)
             {
                 if (window.sseSubscription) {
-                    let url = window.sseSubscription.url;
-                    let request = new XMLHttpRequest();
-                    request.onreadystatechange = function() {
-                        if (this.readyState == 4) {
-                            if (this.status == 204) {
-                                window.sseSubscription = undefined;
-                                if (message) {
-                                    app.$.toast.text = message;
+                    return new Promise((resolve, reject) => {
+                        let url = window.sseSubscription.url;
+                        let request = new XMLHttpRequest();
+                        request.onreadystatechange = function() {
+                            if (this.readyState == 4) {
+                                if (this.status == 204) {
+                                    console.log(`ViewFile:${this.path} successfully unsubscribed`);
+                                    window.sseSubscription = undefined;
+                                    if (message) {
+                                        app.$.toast.text = message;
+                                        app.$.toast.show();
+                                    }
+                                    console.log(`ViewFile:${this.path} marking resolved`);
+                                    resolve();
+                                } else {
+                                    app.$.toast.text = "Subscription deletion failed: " + this.statusText;
                                     app.$.toast.show();
+                                    reject(this.statusText);
                                 }
-                            } else {
-                                app.$.toast.text = "Subscription deletion failed: " + this.statusText;
-                                app.$.toast.show();
                             }
-                        }
-                    };
-                    let auth = app.getAuthValue();
-                    request.open("DELETE", url, true);
-                    request.setRequestHeader("Authorization", `${auth}`);
-                    request.send();
+                        };
+                        let auth = app.getAuthValue();
+                        request.open("DELETE", url, true);
+                        request.setRequestHeader("Authorization", `${auth}`);
+                        request.send();
+                    });
+                } else {
+                    return Promise.resolve();
                 }
             }
 
             _sseDisableLive()
             {
-                this._unsubscribe("Live Mode disengaged");
+                window.subscriptionPromise.then(this._unsubscribe("Live Mode disengaged"));
             }
 
             _buildSource(url)
             {
+                console.log(`Creating SSE Source for ${url}`);
                 let headers = new Headers();
                 let auth = app.getAuthValue();
                 headers.append('Authorization', auth);
@@ -395,6 +426,7 @@
             _inotifySseEvent(e)
             {
                 let event = JSON.parse(e.data).event;
+                //console.log("INOTIFY event: " + JSON.stringify(event));
                 let mask = event.mask;
                 if (mask.indexOf("IN_CREATE") != -1) {
                     this._inotifyCreate(event);
